@@ -1,7 +1,10 @@
 <launch>
     <!-- unique camera name-->
+    <arg name="external_manager" default="false"/>
+    <arg name="manager" default="orbbec_camera_manager"/>
     <arg name="camera_name" default="camera"/>
     <arg name="output" default="screen"/>
+    <arg name="required" default="false"/>
     <!-- Hardware depth registration -->
     <arg name="depth_registration" default="true"/>
     <arg name="serial_number" default=""/>
@@ -48,9 +51,13 @@
     <arg name="enable_d2c_viewer" default="false"/>
     <arg name="enable_pipeline" default="true"/>
     <arg name="enable_soft_filter" default="true"/>
+    <arg name="respawn" default="false"/>
     <group ns="$(arg camera_name)">
-        <node name="camera" pkg="orbbec_camera" type="orbbec_camera_node" output="$(arg output)">
-            <param name="camera_name" value="$(arg camera_name)"/>
+        <node unless="$(arg external_manager)" pkg="nodelet" type="nodelet" name="$(arg manager)" args="manager"
+              output="$(arg output)" required="$(arg required)" respawn="$(arg respawn)"/>
+        <node pkg="nodelet" type="nodelet" name="orbbec_camera"
+              args="load orbbec_camera/OBCameraNodelet $(arg manager)" output="$(arg output)" required="$(arg required)"
+              respawn="$(arg respawn)">            <param name="camera_name" value="$(arg camera_name)"/>
             <param name="depth_registration" value="$(arg depth_registration)"/>
             <param name="serial_number" type="string" value="$(arg serial_number)"/>
             <param name="usb_port" type="string" value="$(arg usb_port)"/>
