@@ -770,3 +770,11 @@ debian/*
 # Additional files built by Visual Studio
 
 # End of https://www.toptal.com/developers/gitignore/api/visualstudio,visualstudiocode,c++,python,jetbrains+all,ros,ros2
+
+*.pyc
+models/*
+!models/.gitkeep
+.pylintrc
+.vscode/
+.hypothesis/
+
