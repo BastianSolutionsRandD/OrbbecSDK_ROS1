@@ -60,11 +60,17 @@ void OBCameraNode::init() {
 #endif
   if (format_[COLOR] == OB_FORMAT_H264) {
     ffmpeg_decoder_ = std::make_shared<ffmpeg_image_transport::FFMPEGDecoder>();
+    ffmpeg_pkt_ = boost::make_shared<ffmpeg_image_transport::FFMPEGPacket>();
     ffmpeg_pkt_->encoding = "h264_nvenc";
     ffmpeg_pkt_->img_width = width_[COLOR];
     ffmpeg_pkt_->img_height = height_[COLOR];
-    ffmpeg_decoder_->initialize(ffmpeg_pkt_, 
+    bool success = ffmpeg_decoder_->initialize(ffmpeg_pkt_, 
       boost::bind(&OBCameraNode::ffmpegDecoderCallback, this, boost::placeholders::_1, boost::placeholders::_2));
+    if (!success) {
+      ROS_ERROR_STREAM("Failed to initialize FFMPEGDecoder but color format is set to H264! Exiting...");
+      throw;
+    }
+    encoding_[COLOR] = sensor_msgs::image_encodings::BGR8;
   }
   rgb_buffer_ = new uint8_t[width_[COLOR] * height_[COLOR] * 3];
   rgb_is_decoded_ = false;
@@ -730,7 +736,7 @@ bool OBCameraNode::decodeColorFrameToBuffer(const std::shared_ptr<ob::Frame>& fr
     {
       auto *data = static_cast<uint8_t *>(frame->data());
       ffmpeg_pkt_->data.assign(data, data + frame->dataSize());
-      ROS_ERROR_STREAM("Attempting to decode frame with size " << frame->dataSize());
+      ROS_DEBUG_STREAM("Attempting to decode frame with size " << frame->dataSize());
       if (!ffmpeg_decoder_->isInitialized() || !ffmpeg_decoder_->decodePacket(ffmpeg_pkt_)) {
         ROS_ERROR_STREAM("Decode frame via FFMPEG failed");
       } else {
