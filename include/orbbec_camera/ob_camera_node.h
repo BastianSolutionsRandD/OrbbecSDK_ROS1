@@ -21,6 +21,7 @@
 #include "ros/ros.h"
 #include <opencv2/opencv.hpp>
 #include <cv_bridge/cv_bridge.h>
+#include <ffmpeg_image_transport/ffmpeg_decoder.h>
 #include <sensor_msgs/CameraInfo.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/distortion_models.h>
@@ -84,6 +85,9 @@ class OBCameraNode {
   void readDefaultWhiteBalance();
 
   std::shared_ptr<ob::Frame> softwareDecodeColorFrame(const std::shared_ptr<ob::Frame>& frame);
+
+  void ffmpegDecoderCallback(const sensor_msgs::ImageConstPtr &img,
+                             bool isKeyFrame);
 
   void onNewFrameCallback(const std::shared_ptr<ob::Frame>& frame,
                           const stream_index_pair& stream_index);
@@ -391,6 +395,10 @@ class OBCameraNode {
   // double infrared
   bool enable_left_ir_ = false;
   bool enable_right_ir_ = false;
+
+  // ffmpeg (h264, h265, hevc) decoder
+  std::shared_ptr<ffmpeg_image_transport::FFMPEGDecoder> ffmpeg_decoder_ = nullptr;
+  ffmpeg_image_transport::FFMPEGPacket::Ptr ffmpeg_pkt_ = nullptr;
 };
 
 }  // namespace orbbec_camera
