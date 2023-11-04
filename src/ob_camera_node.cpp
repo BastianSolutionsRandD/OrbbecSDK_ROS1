@@ -58,10 +58,12 @@ void OBCameraNode::init() {
 #elif defined(USE_NV_HW_DECODER)
   mjpeg_decoder_ = std::make_shared<JetsonNvJPEGDecoder>(width_[COLOR], height_[COLOR]);
 #endif
-  if (format_[COLOR] == OB_FORMAT_H264) {
+  if (format_[COLOR] == OB_FORMAT_H264 || 
+      format_[COLOR] == OB_FORMAT_H265 ||
+      format_[COLOR] == OB_FORMAT_HEVC) {
     ffmpeg_decoder_ = std::make_shared<ffmpeg_image_transport::FFMPEGDecoder>();
     ffmpeg_pkt_ = boost::make_shared<ffmpeg_image_transport::FFMPEGPacket>();
-    ffmpeg_pkt_->encoding = "h264_nvenc";
+    ffmpeg_pkt_->encoding = format_[COLOR] == OB_FORMAT_H264 ? "h264_nvenc" : "hevc_nvenc";
     ffmpeg_pkt_->img_width = width_[COLOR];
     ffmpeg_pkt_->img_height = height_[COLOR];
     bool success = ffmpeg_decoder_->initialize(ffmpeg_pkt_, 
