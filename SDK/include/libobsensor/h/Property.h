@@ -1,4 +1,4 @@
-// License: Apache 2.0. See LICENSE file in root directory.
+﻿// License: Apache 2.0. See LICENSE file in root directory.
 // Copyright(c) 2020 Orbbec  Corporation. All Rights Reserved.
 
 /**
@@ -576,6 +576,11 @@ typedef enum {
      * @brief The enable/disable switch for IR short exposure function, supported only by a few devices.
      */
     OB_PROP_IR_SHORT_EXPOSURE_BOOL = 2032,
+
+    /**
+     * @brief Color camera HDR
+     */
+    OB_PROP_COLOR_HDR_BOOL = 2034,
 
     /**
      * @brief Software disparity to depth

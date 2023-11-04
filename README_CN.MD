@@ -28,7 +28,7 @@ mkdir -p ~/ros_ws/src
 
 ```bash
 cd ~/ros_ws/src/
-git clone https://github.com/OrbbecDeveloper/OrbbecSDK_ROS1.git
+git clone https://github.com/orbbec/OrbbecSDK_ROS1.git
 ```
 
 或者您可以从[Orbbec 开发者社区](https://developer.orbbec.com.cn/download.html)下载
@@ -177,6 +177,11 @@ rosservice call  /camera/toggle_depth "{data: true}"
 
 ```bash
 rosservice call /camera/save_images "{}"
+```
+- 保存点云。
+
+```bash
+rosservice call /camera/save_point_cloud "{}"
 ```
 
 注意：图像保存在 `~/.ros/image` 下，仅在传感器打开时才可用
@@ -362,6 +367,36 @@ roslaunch orbbec_camera multi_camera.launch
   `100hz`,`200hz`,`500hz`,`1khz`,`2khz`,`4khz`,`8khz`,`16khz`,`32khz`。具体的值取决于当前的相机型号。
 - `gyro_range` : 陀螺仪的量程, 可选值为`16dps`,`31dps`,`62dps`,`125dps`,`250dps`,`500dps`,`1000dps`,`2000dps`
   。具体的值取决于当前的相机型号。
+- `enumerate_net_device` : 是否开启枚举网络设备的功能，true为开启，false为关闭，仅Femto mega和Gemini 2 XL设备支持。
+  当通过网络方式访问以上设备时，需提前配置好设备的IP地址，使能开关需要配置成true。
+
+## 深度模式切换：
+- 启动相机前,可通过配置对应相继的xxx.launch的深度模式(depth_work_mode)支持。
+- 深度模式切换支持的相机:Gemini 2,Gemini 2 L,Gemini 2 XL。
+- xxx.launch默认深度模式配置为相机默认配置,如果需要修改可根据需要切换相应深度模式。
+- 具体相机深度模式支持类型可查看深度模式的注释。
+
+```XML
+  <!-- Depth work mode support is as follows： -->
+  <!-- Unbinned Dense Default -->
+  <!-- Unbinned Sparse Default -->
+  <!-- Binned Sparse Default -->
+  <arg name="depth_work_mode" default=""/>
+```
+
+- 深度工作模式查看:
+
+```bash
+rosrun orbbec_camera list_depth_work_mode_node
+```
+## 深度NFOV和WFOV模式配置
+对于Femto Mega和Femto Bolt设备，深度NFOV和WFOV模式通过在launch文件中配置Depth和IR的分辨率实现。
+在launch文件中，`depth_width`, `depth_height`、'ir_width'、‘ir_height’为深度流的分辨率和IR流的分辨率。
+IR的分辨率和帧率必须和深度保持一致。不同模式和分辨率对应关系如下:
+- NFoV unbinned：640 x 576。
+- NFoV binned：320 x 288。
+- WFoV unbinned：1024 x1024。
+- WFoV binned：512 x 512。
 
 ## 查看相机支持那些Profile
 
@@ -386,6 +421,7 @@ roslaunch orbbec_camera multi_camera.launch
 | deeya                                     | deeya.launch         |
 | femto / femto w                           | femto.launch         |
 | femto mega                                | femto_mega.launch    |
+| femto bolt                                | femto_bolt.launch    |
 | gemini                                    | gemini.launch        |
 | gemini                                    | gemini.launch        |
 | gemini2 / dabai DCL                       | gemini2.launch       |
@@ -399,7 +435,7 @@ roslaunch orbbec_camera multi_camera.launch
 
 | **SDK version** | **products list** | **firmware version**                      |
 |-----------------|-------------------|-------------------------------------------|
-| v1.7.2          | Gemini 2 XL       | Obox: V1.2.5  VL:1.4.54                   |
+| v1.8.1          | Gemini 2 XL       | Obox: V1.2.5  VL:1.4.54                   |
 |                 | Astra 2           | 2.8.20                                    |
 |                 | Gemini 2 L        | 1.4.32                                    |
 |                 | Gemini 2          | 1.4.60 /1.4.76                            |
@@ -407,6 +443,7 @@ roslaunch orbbec_camera multi_camera.launch
 |                 | Astra+            | 1.0.22/1.0.21/1.0.20/1.0.19               |
 |                 | Femto             | 1.6.7                                     |
 |                 | Femto W           | 1.1.8                                     |
+|                 | Femto Bolt        | 1.0.6 (unsupported ARNM32)                |
 |                 | DaBai             | 2436                                      |
 |                 | DaBai DCW         | 2460                                      |
 |                 | DaBai DW          | 2606                                      |

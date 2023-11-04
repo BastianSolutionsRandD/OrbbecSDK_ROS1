@@ -51,6 +51,7 @@
     <arg name="ir_info_uri" default=""/>
     <arg name="color_info_uri" default=""/>
     <arg name="log_level" default="none"/>
+    <arg name="enumerate_net_device" default="false"/>
     <arg name="enable_d2c_viewer" default="false"/>
     <arg name="enable_pipeline" default="true"/>
     <arg name="enable_ldp" default="true"/>
@@ -62,9 +63,14 @@
     <arg name="color_delay_us" default="0"/>
     <arg name="frame_sync" default="true"/>
     <arg name="trigger2image_delay_us" default="0"/>
-    <arg name="trigger_signal_output_delay_us" default="0"/>
-    <arg name="trigger_signal_output_enabled" default="false"/>
+    <arg name="trigger_out_delay_us" default="0"/>
+    <arg name="trigger_out_enabled" default="false"/>
+    <!-- Depth work mode support is as follows： -->
+    <!-- Unbinned Dense Default -->
+    <!-- Unbinned Sparse Default -->
+    <!-- Binned Sparse Default -->
     <arg name="depth_work_mode" default=""/>
+    <arg name="enable_frame_sync" default="false"/>
     <group ns="$(arg camera_name)">
         <node name="camera" pkg="orbbec_camera" type="orbbec_camera_node" output="$(arg output)">
             <param name="camera_name" value="$(arg camera_name)"/>
@@ -115,6 +121,7 @@
             <param name="ir_info_uri" value="$(arg ir_info_uri)"/>
             <param name="color_info_uri" value="$(arg color_info_uri)"/>
             <param name="log_level" value="$(arg log_level)"/>
+            <param name="enumerate_net_device" value="$(arg enumerate_net_device)"/>
             <param name="enable_d2c_viewer" value="$(arg enable_d2c_viewer)"/>
             <param name="enable_pipeline" value="$(arg enable_pipeline)"/>
             <param name="enable_ldp" value="$(arg enable_ldp)"/>
@@ -127,9 +134,10 @@
             <param name="color_delay_us" value="$(arg color_delay_us)"/>
             <param name="frame_sync" value="$(arg frame_sync)"/>
             <param name="trigger2image_delay_us" value="$(arg trigger2image_delay_us)"/>
-            <param name="trigger_signal_output_delay_us" value="$(arg trigger_signal_output_delay_us)"/>
-            <param name="trigger_signal_output_enabled" value="$(arg trigger_signal_output_enabled)"/>
+            <param name="trigger_out_delay_us" value="$(arg trigger_out_delay_us)"/>
+            <param name="trigger_out_enabled" value="$(arg trigger_out_enabled)"/>
             <param name="depth_work_mode" value="$(arg depth_work_mode)"/>
+            <param name="enable_frame_sync" value="$(arg enable_frame_sync)"/>
             <remap from="/$(arg camera_name)/depth/color/points" to="/$(arg camera_name)/depth_registered/points"/>
         </node>
     </group>

@@ -23,7 +23,7 @@
 
 #define OB_ROS_MAJOR_VERSION 1
 #define OB_ROS_MINOR_VERSION 3
-#define OB_ROS_PATCH_VERSION 2
+#define OB_ROS_PATCH_VERSION 9
 
 #ifndef STRINGIFY
 #define STRINGIFY(arg) #arg
@@ -96,6 +96,7 @@ const std::string DEFAULT_D2C_MODE = "sw";  // sw = software mode, hw=hardware m
 const float ROS_DEPTH_SCALE = 0.001;
 
 const int32_t FEMTO_OW_PID = 0x0638;
+const int32_t FEMTO_BOLT_PID = 0x066b;
 const int32_t FEMTO_LIVE_PID = 0x0668;
 const int32_t FEMTO_PID = 0x0635;
 const int32_t ASTRA_PLUS_PID = 0x0636;
@@ -105,6 +106,5 @@ const int32_t OPENNI_END_PID = 0x06FF;
 const int32_t ASTRA_MINI_PID = 0x0404;
 const int32_t ASTRA_MINI_S_PID = 0x0407;
 const int GEMINI2_PID = 0x0670;
-const std::string DEFAULT_SEM_NAME = "orbbec_device_sem";
-const key_t DEFAULT_SEM_KEY = 0x0401;
+const std::string ORB_DEFAULT_LOCK_NAME = "orbbec_device.lock";
 }  // namespace orbbec_camera

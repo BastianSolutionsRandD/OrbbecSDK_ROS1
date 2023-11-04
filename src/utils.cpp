@@ -150,6 +150,7 @@ std::string ObDeviceTypeToString(const OBDeviceType &type) {
 
 sensor_msgs::CameraInfo convertToCameraInfo(OBCameraIntrinsic intrinsic,
                                             OBCameraDistortion distortion, int width) {
+  (void)width;
   sensor_msgs::CameraInfo info;
   info.distortion_model = sensor_msgs::distortion_models::PLUMB_BOB;
   info.width = intrinsic.width;
@@ -157,9 +158,9 @@ sensor_msgs::CameraInfo convertToCameraInfo(OBCameraIntrinsic intrinsic,
   info.D.resize(5, 0.0);
   info.D[0] = distortion.k1;
   info.D[1] = distortion.k2;
-  info.D[2] = distortion.k3;
-  info.D[3] = distortion.k4;
-  info.D[4] = distortion.k5;
+  info.D[2] = distortion.p1;
+  info.D[3] = distortion.p2;
+  info.D[4] = distortion.k3;
 
   info.K.fill(0.0);
   info.K[0] = intrinsic.fx;
@@ -179,17 +180,6 @@ sensor_msgs::CameraInfo convertToCameraInfo(OBCameraIntrinsic intrinsic,
   info.P[5] = info.K[4];
   info.P[6] = info.K[5];
   info.P[10] = 1.0;
-
-  double scaling = static_cast<double>(width) / 640;
-  info.K[0] *= scaling;  // fx
-  info.K[2] *= scaling;  // cx
-  info.K[4] *= scaling;  // fy
-  info.K[5] *= scaling;  // cy
-  info.P[0] *= scaling;  // fx
-  info.P[2] *= scaling;  // cx
-  info.P[5] *= scaling;  // fy
-  info.P[6] *= scaling;  // cy
-
   return info;
 }
 
@@ -221,7 +211,7 @@ void saveRGBPointsToPly(std::shared_ptr<ob::Frame> frame, const std::string &fil
   fclose(fp);
 }
 
-void soavePointCloudMsgToPly(const sensor_msgs::PointCloud2 &msg, const std::string &fileName) {
+void saveRGBPointCloudMsgToPly(const sensor_msgs::PointCloud2 &msg, const std::string &fileName) {
   FILE *fp = fopen(fileName.c_str(), "wb+");
   CHECK_NOTNULL(fp);
 
@@ -260,6 +250,44 @@ void soavePointCloudMsgToPly(const sensor_msgs::PointCloud2 &msg, const std::str
     if (!std::isnan(*iter_x) && !std::isnan(*iter_y) && !std::isnan(*iter_z)) {
       fprintf(fp, "%.3f %.3f %.3f %d %d %d\n", *iter_x, *iter_y, *iter_z, (int)*iter_r,
               (int)*iter_g, (int)*iter_b);
+    }
+  }
+
+  fflush(fp);
+  fclose(fp);
+}
+
+void saveDepthPointCloudMsgToPly(const sensor_msgs::PointCloud2 &msg, const std::string &fileName) {
+  FILE *fp = fopen(fileName.c_str(), "wb+");
+  CHECK_NOTNULL(fp);
+  sensor_msgs::PointCloud2ConstIterator<float> iter_x(msg, "x");
+  sensor_msgs::PointCloud2ConstIterator<float> iter_y(msg, "y");
+  sensor_msgs::PointCloud2ConstIterator<float> iter_z(msg, "z");
+
+  // First, count the actual number of valid points
+  size_t valid_points = 0;
+  for (; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z) {
+    if (!std::isnan(*iter_x) && !std::isnan(*iter_y) && !std::isnan(*iter_z)) {
+      ++valid_points;
+    }
+  }
+
+  // Reset the iterators
+  iter_x = sensor_msgs::PointCloud2ConstIterator<float>(msg, "x");
+  iter_y = sensor_msgs::PointCloud2ConstIterator<float>(msg, "y");
+  iter_z = sensor_msgs::PointCloud2ConstIterator<float>(msg, "z");
+
+  fprintf(fp, "ply\n");
+  fprintf(fp, "format ascii 1.0\n");
+  fprintf(fp, "element vertex %zu\n", valid_points);
+  fprintf(fp, "property float x\n");
+  fprintf(fp, "property float y\n");
+  fprintf(fp, "property float z\n");
+  fprintf(fp, "end_header\n");
+
+  for (; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z) {
+    if (!std::isnan(*iter_x) && !std::isnan(*iter_y) && !std::isnan(*iter_z)) {
+      fprintf(fp, "%.3f %.3f %.3f\n", *iter_x, *iter_y, *iter_z);
     }
   }
 
@@ -347,7 +375,7 @@ bool isOpenNIDevice(int pid) {
       0x060e, 0x060f, 0x0610, 0x0613, 0x0614, 0x0616, 0x0617, 0x0618, 0x061b, 0x062b,
       0x062c, 0x062d, 0x0632, 0x0633, 0x0634, 0x0635, 0x0636, 0x0637, 0x0638, 0x0639,
       0x063a, 0x0650, 0x0651, 0x0654, 0x0655, 0x0656, 0x0657, 0x0658, 0x0659, 0x065a,
-      0x065b, 0x065c, 0x065d, 0x0698, 0x0699, 0x069a, 0x055c, 0x065e};
+      0x065b, 0x065c, 0x065d, 0x0698, 0x0699, 0x069a, 0x055c, 0x065e, 0x06a0};
 
   for (const auto &pid_openni : OPENNI_DEVICE_PIDS) {
     if (pid == pid_openni) {

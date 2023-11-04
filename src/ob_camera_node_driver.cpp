@@ -21,6 +21,7 @@
 #include <sys/shm.h>
 #include <ros/package.h>
 #include <regex>
+#include <sys/mman.h>
 
 namespace orbbec_camera {
 OBCameraNodeDriver::OBCameraNodeDriver(ros::NodeHandle& nh, ros::NodeHandle& nh_private)
@@ -33,68 +34,12 @@ OBCameraNodeDriver::OBCameraNodeDriver(ros::NodeHandle& nh, ros::NodeHandle& nh_
 
 OBCameraNodeDriver::~OBCameraNodeDriver() {
   is_alive_ = false;
-  if (device_count_update_thread_ && device_count_update_thread_->joinable()) {
-    device_count_update_thread_->join();
-  }
   if (reset_device_thread_ && reset_device_thread_->joinable()) {
     reset_device_cv_.notify_all();
     reset_device_thread_->join();
   }
   if (query_thread_ && query_thread_->joinable()) {
     query_thread_->join();
-  }
-  if (sync_time_thread_ && sync_time_thread_->joinable()) {
-    sync_time_thread_->join();
-  }
-  if (device_num_ > 1) {
-    sem_unlink(DEFAULT_SEM_NAME.c_str());
-    int shm_id = shmget(DEFAULT_SEM_KEY, 1, 0666 | IPC_CREAT);
-    if (shm_id != -1) {
-      shmctl(shm_id, IPC_RMID, nullptr);
-    }
-  }
-}
-
-void OBCameraNodeDriver::releaseDeviceSemaphore(sem_t* device_sem,
-                                                int& num_devices_connected) const {
-  ROS_INFO_STREAM_THROTTLE(1.0, "Release device semaphore");
-  sem_post(device_sem);
-  int sem_value = 0;
-  sem_getvalue(device_sem, &sem_value);
-  ROS_INFO_STREAM_THROTTLE(1.0, "semaphore value: " << sem_value);
-  ROS_INFO_STREAM_THROTTLE(1.0, "Release device semaphore done");
-  if (num_devices_connected >= device_num_) {
-    sem_destroy(device_sem);
-    sem_unlink(DEFAULT_SEM_NAME.c_str());
-  }
-}
-
-void OBCameraNodeDriver::updateConnectedDeviceCount(int& num_devices_connected,
-                                                    DeviceConnectionEvent connection_event) {
-  int shm_id = shmget(DEFAULT_SEM_KEY, 1, 0666 | IPC_CREAT);
-  if (shm_id == -1) {
-    ROS_ERROR_STREAM("Failed to create shared memory " << strerror(errno));
-    return;
-  }
-  auto shm_ptr = (int*)shmat(shm_id, nullptr, 0);
-  if (shm_ptr == (void*)-1) {
-    ROS_ERROR_STREAM("Failed to attach shared memory " << strerror(errno));
-    return;
-  }
-  if (connection_event == DeviceConnectionEvent::kDeviceConnected) {
-    num_devices_connected = *shm_ptr + 1;
-  } else if (connection_event == DeviceConnectionEvent::kDeviceDisconnected && *shm_ptr > 0) {
-    num_devices_connected = *shm_ptr - 1;
-  } else {
-    num_devices_connected = *shm_ptr;
-  }
-  ROS_DEBUG_STREAM_THROTTLE(1.0, "Current connected device " << num_devices_connected);
-  *shm_ptr = static_cast<int>(num_devices_connected);
-  shmdt(shm_ptr);
-  if (connection_event == DeviceConnectionEvent::kDeviceDisconnected &&
-      num_devices_connected == 0) {
-    shmctl(shm_id, IPC_RMID, nullptr);
-    sem_unlink(DEFAULT_SEM_NAME.c_str());
   }
 }
 
@@ -103,20 +48,42 @@ void OBCameraNodeDriver::init() {
   auto log_level = nh_private_.param<std::string>("log_level", "info");
   auto ob_log_level = obLogSeverityFromString(log_level);
   ctx_->setLoggerSeverity(ob_log_level);
+  orb_device_lock_shm_fd_ = shm_open(ORB_DEFAULT_LOCK_NAME.c_str(), O_CREAT | O_RDWR, 0666);
+  if (orb_device_lock_shm_fd_ < 0) {
+    ROS_ERROR_STREAM("Failed to open shared memory " << ORB_DEFAULT_LOCK_NAME);
+    return;
+  }
+  int ret = ftruncate(orb_device_lock_shm_fd_, sizeof(pthread_mutex_t));
+  if (ret < 0) {
+    ROS_ERROR_STREAM("Failed to truncate shared memory " << ORB_DEFAULT_LOCK_NAME);
+    return;
+  }
+  orb_device_lock_shm_addr_ =
+      static_cast<uint8_t*>(mmap(NULL, sizeof(pthread_mutex_t), PROT_READ | PROT_WRITE, MAP_SHARED,
+                                 orb_device_lock_shm_fd_, 0));
+  if (orb_device_lock_shm_addr_ == MAP_FAILED) {
+    ROS_ERROR_STREAM("Failed to map shared memory " << ORB_DEFAULT_LOCK_NAME);
+    return;
+  }
+  pthread_mutexattr_init(&orb_device_lock_attr_);
+  pthread_mutexattr_setpshared(&orb_device_lock_attr_, PTHREAD_PROCESS_SHARED);
+  orb_device_lock_ = (pthread_mutex_t*)orb_device_lock_shm_addr_;
+  pthread_mutex_init(orb_device_lock_, &orb_device_lock_attr_);
   serial_number_ = nh_private_.param<std::string>("serial_number", "");
   usb_port_ = nh_private_.param<std::string>("usb_port", "");
   connection_delay_ = nh_private_.param<int>("connection_delay", 100);
   device_num_ = static_cast<int>(nh_private_.param<int>("device_num", 1));
+  auto enumerate_net_device_ =
+      static_cast<int>(nh_private_.param<bool>("enumerate_net_device", false));
+  ctx_->enableNetDeviceEnumeration(enumerate_net_device_);
   check_connection_timer_ = nh_.createWallTimer(
       ros::WallDuration(1.0), [this](const ros::WallTimerEvent&) { this->checkConnectionTimer(); });
   ctx_->setDeviceChangedCallback([this](const std::shared_ptr<ob::DeviceList>& removed_list,
                                         const std::shared_ptr<ob::DeviceList>& added_list) {
-    (void)added_list;
+    deviceConnectCallback(added_list);
     deviceDisconnectCallback(removed_list);
   });
   query_thread_ = std::make_shared<std::thread>([this]() { queryDevice(); });
-  device_count_update_thread_ = std::make_shared<std::thread>([this]() { deviceCountUpdate(); });
-  sync_time_thread_ = std::make_shared<std::thread>([this]() { syncTimeThread(); });
   reset_device_thread_ = std::make_shared<std::thread>([this]() { resetDeviceThread(); });
 }
 
@@ -127,43 +94,14 @@ std::shared_ptr<ob::Device> OBCameraNodeDriver::selectDevice(
     return list->getDevice(0);
   }
 
-  sem_t* device_sem = sem_open(DEFAULT_SEM_NAME.c_str(), O_CREAT, 0644, 1);
-  std::shared_ptr<int> device_sem_guard(nullptr, [&, device_sem](int*) {
-    if (device_sem != SEM_FAILED) {
-      sem_close(device_sem);
-    }
-  });
-  if (device_sem == SEM_FAILED) {
-    ROS_ERROR_STREAM("Failed to open semaphore");
-    return nullptr;
-  }
-
-  int sem_value = 0;
-  sem_getvalue(device_sem, reinterpret_cast<int*>(&sem_value));
-  ROS_INFO_STREAM_THROTTLE(1.0, "semaphore value: " << sem_value);
-
-  int ret = sem_wait(device_sem);
-  if (ret != 0) {
-    ROS_ERROR_STREAM("Failed to wait semaphore " << strerror(errno));
-    releaseDeviceSemaphore(device_sem, num_devices_connected_);
-    return nullptr;
-  }
   std::shared_ptr<ob::Device> device = nullptr;
   if (!serial_number_.empty()) {
-    ROS_INFO_STREAM_THROTTLE(1.0, "Connecting to device with serial number: " << serial_number_);
+    ROS_INFO_STREAM("Connecting to device with serial number: " << serial_number_);
     device = selectDeviceBySerialNumber(list, serial_number_);
   } else if (!usb_port_.empty()) {
-    ROS_INFO_STREAM_THROTTLE(1.0, "Connecting to device with usb port: " << usb_port_);
+    ROS_INFO_STREAM("Connecting to device with usb port: " << usb_port_);
     device = selectDeviceByUSBPort(list, usb_port_);
   }
-
-  std::shared_ptr<int> sem_guard(nullptr, [&, device](int*) {
-    auto connect_event = device != nullptr ? DeviceConnectionEvent::kDeviceConnected
-                                           : DeviceConnectionEvent::kOtherDeviceConnected;
-    updateConnectedDeviceCount(num_devices_connected_, connect_event);
-
-    releaseDeviceSemaphore(device_sem, num_devices_connected_);
-  });
   if (device == nullptr) {
     ROS_WARN_THROTTLE(1.0, "Device with serial number %s not found", serial_number_.c_str());
     device_connected_ = false;
@@ -176,6 +114,7 @@ std::shared_ptr<ob::Device> OBCameraNodeDriver::selectDevice(
 std::shared_ptr<ob::Device> OBCameraNodeDriver::selectDeviceBySerialNumber(
     const std::shared_ptr<ob::DeviceList>& list, const std::string& serial_number) {
   for (size_t i = 0; i < list->deviceCount(); i++) {
+    std::lock_guard<decltype(device_lock_)> lock(device_lock_);
     try {
       auto pid = list->pid(i);
       if (isOpenNIDevice(pid)) {
@@ -207,40 +146,30 @@ std::shared_ptr<ob::Device> OBCameraNodeDriver::selectDeviceBySerialNumber(
 
 std::shared_ptr<ob::Device> OBCameraNodeDriver::selectDeviceByUSBPort(
     const std::shared_ptr<ob::DeviceList>& list, const std::string& usb_port) {
-  for (size_t i = 0; i < list->deviceCount(); i++) {
-    try {
-      auto pid = list->pid(i);
-      if (isOpenNIDevice(pid)) {
-        // openNI device
-        auto dev = list->getDevice(i);
-        auto device_info = dev->getDeviceInfo();
-        std::string uid = device_info->uid();
-        auto port_id = parseUsbPort(uid);
-        if (port_id == usb_port) {
-          ROS_INFO_STREAM("Device port id " << port_id << " matched");
-          return dev;
-        }
-      } else {
-        std::string uid = list->uid(i);
-        auto port_id = parseUsbPort(uid);
-        ROS_INFO_STREAM("Device usb port: " << uid);
-        if (port_id == usb_port) {
-          ROS_INFO_STREAM("Device usb port <<" << uid << " matched");
-          return list->getDevice(i);
-        }
-      }
-    } catch (ob::Error& e) {
-      ROS_ERROR_STREAM("Failed to get device info " << e.getMessage());
-    } catch (std::exception& e) {
-      ROS_ERROR_STREAM("Failed to get device info " << e.what());
-    } catch (...) {
-      ROS_ERROR_STREAM("Failed to get device info");
-    }
+  try {
+    ROS_INFO_STREAM("selectDeviceByUSBPort : Before device lock lock");
+    std::lock_guard<decltype(device_lock_)> lock(device_lock_);
+    ROS_INFO_STREAM("selectDeviceByUSBPort : After device lock lock");
+    auto device = list->getDeviceByUid(usb_port.c_str());
+    ROS_INFO_STREAM("selectDeviceByUSBPort : After getDeviceByUid");
+    return device;
+  } catch (ob::Error& e) {
+    ROS_ERROR_STREAM("Failed to get device info " << e.getMessage());
+  } catch (std::exception& e) {
+    ROS_ERROR_STREAM("Failed to get device info " << e.what());
+  } catch (...) {
+    ROS_ERROR_STREAM("Failed to get device info");
   }
+
   return nullptr;
 }
 
 void OBCameraNodeDriver::initializeDevice(const std::shared_ptr<ob::Device>& device) {
+  std::lock_guard<decltype(device_lock_)> lock(device_lock_);
+  if (device_) {
+    ROS_WARN("device_ is not null, reset device_");
+    device_.reset();
+  }
   device_ = device;
   CHECK_NOTNULL(device_.get());
   if (ob_camera_node_) {
@@ -257,7 +186,7 @@ void OBCameraNodeDriver::initializeDevice(const std::shared_ptr<ob::Device>& dev
   device_info_ = device_->getDeviceInfo();
   device_uid_ = device_info_->uid();
   if (!isOpenNIDevice(device_info_->pid())) {
-    ctx_->enableDeviceClockSync(0);
+    ctx_->enableDeviceClockSync(5000);
   }
   CHECK_NOTNULL(device_info_.get());
   ROS_INFO_STREAM("Device " << device_info_->name() << " connected");
@@ -267,9 +196,9 @@ void OBCameraNodeDriver::initializeDevice(const std::shared_ptr<ob::Device>& dev
   ROS_INFO_STREAM("device uid: " << device_info_->uid());
 }
 
-void OBCameraNodeDriver::startDevice(const std::shared_ptr<ob::DeviceList>& list) {
+void OBCameraNodeDriver::deviceConnectCallback(const std::shared_ptr<ob::DeviceList>& list) {
+  ROS_INFO_STREAM("deviceConnectCallback : deviceConnectCallback start");
   CHECK_NOTNULL(list.get());
-  std::lock_guard<decltype(device_lock_)> lock(device_lock_);
   if (device_connected_) {
     return;
   }
@@ -277,21 +206,44 @@ void OBCameraNodeDriver::startDevice(const std::shared_ptr<ob::DeviceList>& list
     ROS_WARN("No device found");
     return;
   }
-  if (device_) {
-    device_.reset();
-  }
-  std::this_thread::sleep_for(std::chrono::milliseconds(connection_delay_));
-  auto device = selectDevice(list);
-  if (device == nullptr) {
-    if (!serial_number_.empty()) {
-      ROS_WARN_THROTTLE(1.0, "Device with serial number %s not found", serial_number_.c_str());
-    } else if (!usb_port_.empty()) {
-      ROS_WARN_THROTTLE(1.0, "Device with usb port %s not found", usb_port_.c_str());
+  bool start_device_failed = false;
+  try {
+    std::this_thread::sleep_for(std::chrono::milliseconds(connection_delay_));
+    ROS_INFO_STREAM("deviceConnectCallback : Before process lock lock");
+    pthread_mutex_lock(orb_device_lock_);
+    ROS_INFO_STREAM("deviceConnectCallback : After process lock lock");
+    std::shared_ptr<int> lock_guard(nullptr,
+                                    [this](int*) { pthread_mutex_unlock(orb_device_lock_); });
+    ROS_INFO_STREAM("deviceConnectCallback : selectDevice start");
+    auto device = selectDevice(list);
+    ROS_INFO_STREAM("deviceConnectCallback : selectDevice end");
+    if (device == nullptr) {
+      if (!serial_number_.empty()) {
+        ROS_WARN_THROTTLE(1.0, "Device with serial number %s not found", serial_number_.c_str());
+      } else if (!usb_port_.empty()) {
+        ROS_WARN_THROTTLE(1.0, "Device with usb port %s not found", usb_port_.c_str());
+      }
+      device_connected_ = false;
+      ROS_WARN_STREAM("deviceConnectCallback : start device failed, return");
+      return;
     }
-    device_connected_ = false;
-    return;
+    initializeDevice(device);
+  } catch (ob::Error& e) {
+    start_device_failed = true;
+    ROS_ERROR_STREAM("Failed to initialize device " << e.getMessage());
+  } catch (std::exception& e) {
+    start_device_failed = true;
+    ROS_ERROR_STREAM("Failed to initialize device " << e.what());
+  } catch (...) {
+    start_device_failed = true;
+    ROS_ERROR_STREAM("Failed to initialize device");
   }
-  initializeDevice(device);
+  if (start_device_failed) {
+    std::unique_lock<decltype(reset_device_lock_)> reset_lock(reset_device_lock_);
+    reset_device_ = true;
+    reset_device_cv_.notify_all();
+  }
+  ROS_INFO_STREAM("deviceConnectCallback : deviceConnectCallback end");
 }
 
 void OBCameraNodeDriver::checkConnectionTimer() {
@@ -313,23 +265,19 @@ void OBCameraNodeDriver::deviceDisconnectCallback(
   if (device_info_ != nullptr) {
     ROS_INFO_STREAM("current node serial " << device_info_->serialNumber());
   }
-  bool current_device_disconnected = false;
   for (size_t i = 0; i < device_list->deviceCount(); i++) {
     std::string device_uid = device_list->uid(i);
     ROS_INFO_STREAM("Device with uid " << device_uid << " disconnected");
-    std::lock_guard<decltype(device_lock_)> lock(device_lock_);
     if (device_uid == device_uid_) {
+      ROS_INFO_STREAM("deviceDisconnectCallback : Before reset device, wait for device lock");
       std::unique_lock<decltype(reset_device_lock_)> reset_lock(reset_device_lock_);
       reset_device_ = true;
       reset_device_cv_.notify_all();
-      current_device_disconnected = true;
+      ROS_INFO_STREAM(device_uid << " reset device " << device_uid << " notification sent");
       break;
     }
   }
-  auto connect_event = current_device_disconnected
-                           ? DeviceConnectionEvent::kDeviceDisconnected
-                           : DeviceConnectionEvent::kOtherDeviceDisconnected;
-  updateConnectedDeviceCount(num_devices_connected_, connect_event);
+  ROS_INFO_STREAM("deviceDisconnectCallback : deviceDisconnectCallback end");
 }
 
 OBLogSeverity OBCameraNodeDriver::obLogSeverityFromString(const std::string& log_level) {
@@ -349,46 +297,15 @@ OBLogSeverity OBCameraNodeDriver::obLogSeverityFromString(const std::string& log
 }
 
 void OBCameraNodeDriver::queryDevice() {
-  while (is_alive_ && ros::ok()) {
-    if (!device_connected_) {
-      ROS_DEBUG_STREAM_THROTTLE(1, "query device");
-      auto list = ctx_->queryDeviceList();
-      CHECK_NOTNULL(list.get());
-      if (list->deviceCount() == 0) {
-        ROS_WARN_STREAM_THROTTLE(1, "No device found");
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        continue;
-      }
-      try {
-        startDevice(list);
-      } catch (const ob::Error& e) {
-        ROS_WARN_STREAM("Failed to start device: " << e.getMessage());
-      } catch (const std::exception& e) {
-        ROS_WARN_STREAM("Failed to start device: " << e.what());
-      } catch (...) {
-        ROS_WARN_STREAM("Failed to start device");
-      }
-
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    } else {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+  if (!device_connected_) {
+    ROS_INFO_STREAM("queryDevice: first query device");
+    auto list = ctx_->queryDeviceList();
+    CHECK_NOTNULL(list.get());
+    if (list->deviceCount() == 0) {
+      ROS_WARN_STREAM("No device found");
+      return;
     }
-  }
-}
-
-void OBCameraNodeDriver::deviceCountUpdate() {
-  while (is_alive_ && ros::ok()) {
-    updateConnectedDeviceCount(num_devices_connected_, DeviceConnectionEvent::kDeviceCountUpdate);
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-  }
-}
-
-void OBCameraNodeDriver::syncTimeThread() {
-  while (is_alive_ && ros::ok()) {
-    if (device_connected_ && device_info_ && !isOpenNIDevice(device_info_->pid())) {
-      ctx_->enableDeviceClockSync(0);
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+    deviceConnectCallback(list);
   }
 }
 
@@ -399,12 +316,18 @@ void OBCameraNodeDriver::resetDeviceThread() {
     if (!is_alive_) {
       break;
     }
-    ob_camera_node_.reset();
-    device_.reset();
-    device_info_.reset();
-    device_connected_ = false;
-    device_uid_.clear();
-    reset_device_ = false;
+    ROS_INFO_STREAM("resetDeviceThread: device is disconnected, reset device start");
+    {
+      std::lock_guard<decltype(device_lock_)> device_lock(device_lock_);
+      ob_camera_node_.reset();
+      ROS_INFO_STREAM("resetDeviceThread: device is disconnected, reset device");
+      device_.reset();
+      device_info_.reset();
+      device_connected_ = false;
+      device_uid_.clear();
+      reset_device_ = false;
+    }
+    ROS_INFO_STREAM("resetDeviceThread: device is disconnected, reset device end");
   }
 }
 std::string OBCameraNodeDriver::parseUsbPort(const std::string& line) {

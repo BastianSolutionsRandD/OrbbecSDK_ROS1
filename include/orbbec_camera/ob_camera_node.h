@@ -93,6 +93,8 @@ class OBCameraNode {
 
   bool decodeColorFrameToBuffer(const std::shared_ptr<ob::Frame>& frame, uint8_t* dest);
 
+  std::shared_ptr<ob::Frame> decodeIRMJPGFrame(const std::shared_ptr<ob::Frame> &frame);
+
   void onNewFrameSetCallback(const std::shared_ptr<ob::FrameSet>& frame_set);
 
   void publishPointCloud(const std::shared_ptr<ob::FrameSet>& frame_set);
@@ -328,7 +330,7 @@ class OBCameraNode {
   std::condition_variable tf_cv_;
   double tf_publish_rate_ = 10.0;
   bool depth_registration_ = false;
-  bool frame_sync_ = false;
+  bool enable_frame_sync_ = false;
   std::recursive_mutex device_lock_;
   std::shared_ptr<camera_info_manager::CameraInfoManager> color_camera_info_ = nullptr;
   std::shared_ptr<camera_info_manager::CameraInfoManager> ir_camera_info_ = nullptr;
@@ -364,8 +366,8 @@ class OBCameraNode {
   int depth_delay_us_ = 0;
   int color_delay_us_ = 0;
   int trigger2image_delay_us_ = 0;
-  int trigger_signal_output_delay_us_ = 0;
-  bool trigger_signal_output_enabled_ = false;
+  int trigger_out_delay_us_ = 0;
+  bool trigger_out_enabled_ = false;
   std::string depth_precision_str_;
   OB_DEPTH_PRECISION_LEVEL depth_precision_ = OB_PRECISION_1MM;
   // IMU

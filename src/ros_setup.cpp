@@ -101,8 +101,8 @@ void OBCameraNode::setupDevices() {
       sync_config.depthDelayUs = depth_delay_us_;
       sync_config.colorDelayUs = color_delay_us_;
       sync_config.trigger2ImageDelayUs = trigger2image_delay_us_;
-      sync_config.triggerSignalOutputDelayUs = trigger_signal_output_delay_us_;
-      sync_config.triggerSignalOutputEnable = trigger_signal_output_enabled_;
+      sync_config.triggerOutDelayUs = trigger_out_delay_us_;
+      sync_config.triggerOutEnable = trigger_out_enabled_;
       device_->setMultiDeviceSyncConfig(sync_config);
       if (device_->isPropertySupported(OB_PROP_SYNC_SIGNAL_TRIGGER_OUT_BOOL,
                                        OB_PERMISSION_READ_WRITE)) {
@@ -240,8 +240,8 @@ void OBCameraNode::setupPublishers() {
     image_publishers_[stream_index] = nh_.advertise<sensor_msgs::Image>(
         topic_name, 1, image_subscribed_cb, image_unsubscribed_cb);
     topic_name = "/" + camera_name_ + "/" + name + "/camera_info";
-    camera_info_publishers_[stream_index] =
-        nh_.advertise<sensor_msgs::CameraInfo>(topic_name, 1, true);
+    camera_info_publishers_[stream_index] = nh_.advertise<sensor_msgs::CameraInfo>(
+        topic_name, 1, image_subscribed_cb, image_unsubscribed_cb);
   }
   if (enable_point_cloud_) {
     ros::SubscriberStatusCallback depth_cloud_subscribed_cb =
@@ -277,14 +277,12 @@ void OBCameraNode::setupPublishers() {
 void OBCameraNode::setupCameraInfo() {
   auto param = getCameraParam();
   if (param) {
-    int base_depth_width = param->depthIntrinsic.width == 0 ? 640 : param->depthIntrinsic.width;
-    int base_rgb_width = param->rgbIntrinsic.width == 0 ? 640 : param->rgbIntrinsic.width;
-    camera_infos_[DEPTH] =
-        convertToCameraInfo(param->depthIntrinsic, param->depthDistortion, base_depth_width);
-    camera_infos_[INFRA0] =
-        convertToCameraInfo(param->depthIntrinsic, param->depthDistortion, base_depth_width);
+    camera_infos_[DEPTH] = convertToCameraInfo(param->depthIntrinsic, param->depthDistortion,
+                                               param->depthIntrinsic.width);
+    camera_infos_[INFRA0] = convertToCameraInfo(param->depthIntrinsic, param->depthDistortion,
+                                                param->depthIntrinsic.width);
     camera_infos_[COLOR] =
-        convertToCameraInfo(param->rgbIntrinsic, param->rgbDistortion, base_rgb_width);
+        convertToCameraInfo(param->rgbIntrinsic, param->rgbDistortion, param->rgbIntrinsic.width);
   } else {
     ROS_WARN_STREAM("Failed to get camera parameters");
   }
@@ -296,7 +294,13 @@ void OBCameraNode::setupPipelineConfig() {
   }
   pipeline_config_ = std::make_shared<ob::Config>();
   if (depth_registration_ && enable_stream_[COLOR] && enable_stream_[DEPTH]) {
-    pipeline_config_->setAlignMode(ALIGN_D2C_HW_MODE);
+    if (device_info_->pid() == FEMTO_BOLT_PID) {
+      ROS_INFO_STREAM("set align mode:  ALIGN_D2C_SW_MODE");
+      pipeline_config_->setAlignMode(ALIGN_D2C_SW_MODE);
+    }else {
+      ROS_INFO_STREAM("set align mode:  ALIGN_D2C_HW_MODE");
+      pipeline_config_->setAlignMode(ALIGN_D2C_HW_MODE);
+    }
   }
   for (const auto& stream_index : IMAGE_STREAMS) {
     if (enable_stream_[stream_index]) {
