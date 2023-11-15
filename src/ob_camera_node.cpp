@@ -1057,7 +1057,7 @@ void OBCameraNode::imageUnsubscribedCallback(const stream_index_pair& stream_ind
       }
     }
     if (all_stream_no_subscriber) {
-      stopStreams();
+      // stopStreams();
     }
   } else {
     if (!stream_started_[stream_index]) {
