@@ -56,12 +56,16 @@
     <arg name="trigger_out_delay_us" default="0"/>
     <arg name="trigger_out_enabled" default="false"/>
     <arg name="enable_frame_sync" default="false"/>
+    <arg name="net_device_address" default=""/>
+    <arg name="net_device_port" default=""/>
     <group ns="$(arg camera_name)">
         <node name="camera" pkg="orbbec_camera" type="orbbec_camera_node" output="$(arg output)">
             <param name="camera_name" value="$(arg camera_name)"/>
             <param name="depth_registration" value="$(arg depth_registration)"/>
-            <param name="serial_number" type="string" value="$(arg serial_number)"/>
-            <param name="usb_port" type="string" value="$(arg usb_port)"/>
+            <param name="serial_number" type="string" unless="$(eval bool(arg('net_device_address')))" value="$(arg serial_number)"/>
+            <param name="usb_port" type="string" unless="$(eval bool(arg('net_device_address')))" value="$(arg usb_port)"/>
+            <param name="net_device_address" type="string" value="$(arg net_device_address)"/>
+            <param name="net_device_port" value="$(arg net_device_port)"/>
             <param name="vendor_id" value="$(arg vendor_id)"/>
             <param name="product_id" value="$(arg product_id)"/>
             <param name="enable_point_cloud" value="$(arg enable_point_cloud)"/>
