@@ -52,6 +52,7 @@ void OBCameraNode::init() {
   readDefaultExposure();
   readDefaultGain();
   readDefaultWhiteBalance();
+  setupFfmpegDecoder();
   is_initialized_ = true;
 #if defined(USE_RK_HW_DECODER)
   mjpeg_decoder_ = std::make_shared<RKMjpegDecoder>(width_[COLOR], height_[COLOR]);
@@ -693,7 +694,7 @@ bool OBCameraNode::decodeColorFrameToBuffer(const std::shared_ptr<ob::Frame>& fr
   if (enable_colored_point_cloud_ && depth_registered_cloud_pub_.getNumSubscribers() > 0) {
     has_subscriber = true;
   }
-  if (!has_subscriber) {
+  if (!has_subscriber && !ffmpeg_decoder_) {
     return false;
   }
   bool is_decoded = false;
@@ -717,6 +718,27 @@ bool OBCameraNode::decodeColorFrameToBuffer(const std::shared_ptr<ob::Frame>& fr
     }
   }
 #endif
+  if (!is_decoded && frame && frame->format() != OB_FORMAT_RGB888) {
+    const bool is_ffmpeg_codec = frame->format() == OB_FORMAT_H264 || 
+                                 frame->format() == OB_FORMAT_H265 || 
+                                 frame->format() == OB_FORMAT_HEVC;
+    if (ffmpeg_decoder_ && is_ffmpeg_codec) 
+    {
+      if (!ffmpeg_decoder_->isInitialized()) {
+        setupFfmpegDecoder();
+      }
+      auto *data = static_cast<uint8_t *>(frame->data());
+      ffmpeg_pkt_->data.assign(data, data + frame->dataSize());
+      ffmpeg_pkt_->pts++;   // ffmpeg_pkt_->pts += 1.0 / 25.0 * 90e3;
+      ffmpeg_pkt_->flags = has_subscriber ? 0x0001 : 0x0004;
+      // decodePacket() calls OBCameraNode::ffmpegDecoderCallback
+      if (!ffmpeg_decoder_->decodePacket(ffmpeg_pkt_)) {
+        ROS_ERROR_STREAM("Decode frame via FFMPEG failed");
+      } else {
+        is_decoded = true;
+      }
+    }
+  }
   if (!is_decoded) {
     auto video_frame = softwareDecodeColorFrame(frame);
     if (!video_frame) {
@@ -811,6 +833,44 @@ std::shared_ptr<ob::Frame> OBCameraNode::softwareDecodeColorFrame(
     return nullptr;
   }
   return covert_frame;
+}
+
+void OBCameraNode::setupFfmpegDecoder() {
+  if (format_[COLOR] == OB_FORMAT_H264 || 
+      format_[COLOR] == OB_FORMAT_H265 ||
+      format_[COLOR] == OB_FORMAT_HEVC) {
+    if (!ffmpeg_decoder_) {
+      ffmpeg_decoder_ = std::make_shared<ffmpeg_image_transport::FFMPEGDecoder>();
+    }
+    if (!ffmpeg_pkt_) {
+      ffmpeg_pkt_ = boost::make_shared<ffmpeg_image_transport::FFMPEGPacket>();
+    }
+    if (!ffmpeg_decoder_callback_) {
+      ffmpeg_decoder_callback_ = boost::bind(&OBCameraNode::ffmpegDecoderCallback, 
+                                             this, 
+                                             boost::placeholders::_1, 
+                                             boost::placeholders::_2);
+    }
+    ffmpeg_pkt_->encoding = format_[COLOR] == OB_FORMAT_H264 ? "h264_nvenc" : "hevc_nvenc";
+    ffmpeg_pkt_->img_width = width_[COLOR];
+    ffmpeg_pkt_->img_height = height_[COLOR];
+    ffmpeg_pkt_->pts = 0;
+    ffmpeg_pkt_->pts = 0x0001;
+    ffmpeg_pkt_->data.clear();
+    bool success = ffmpeg_decoder_->initialize(ffmpeg_pkt_, ffmpeg_decoder_callback_);
+    if (!success) {
+      ROS_ERROR_STREAM("Failed to initialize FFMPEGDecoder but color format is set to H264! Exiting...");
+      throw;
+    }
+    // ffmpeg_decoder_->setMeasurePerformance(true);
+    encoding_[COLOR] = sensor_msgs::image_encodings::BGR8;
+  }
+}
+
+void OBCameraNode::ffmpegDecoderCallback(const sensor_msgs::ImageConstPtr &img,
+                                         bool isKeyFrame) {
+  auto *data = &img->data[0];
+  memcpy(rgb_buffer_, data, img->data.size());
 }
 
 void OBCameraNode::onNewFrameCallback(const std::shared_ptr<ob::Frame>& frame,
@@ -1021,7 +1081,7 @@ void OBCameraNode::imageUnsubscribedCallback(const stream_index_pair& stream_ind
       }
     }
     if (all_stream_no_subscriber) {
-      stopStreams();
+      // stopStreams();
     }
   } else {
     if (!stream_started_[stream_index]) {

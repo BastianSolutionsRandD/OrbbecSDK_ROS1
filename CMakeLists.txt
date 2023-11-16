@@ -47,6 +47,7 @@ find_package(catkin REQUIRED
   camera_info_manager
   cv_bridge
   dynamic_reconfigure
+  ffmpeg_image_transport
   image_geometry
   image_transport
   message_filters
@@ -104,6 +105,7 @@ catkin_package(
   camera_info_manager
   cv_bridge
   dynamic_reconfigure
+  ffmpeg_image_transport
   image_geometry
   image_transport
   message_filters
