@@ -76,6 +76,8 @@ void OBCameraNodeDriver::init() {
   auto enumerate_net_device_ =
       static_cast<int>(nh_private_.param<bool>("enumerate_net_device", false));
   ctx_->enableNetDeviceEnumeration(enumerate_net_device_);
+  net_device_address_ = nh_private_.param<std::string>("net_device_address", std::string());
+  net_device_port_ = nh_private_.param<int>("net_device_port", 0);
   check_connection_timer_ = nh_.createWallTimer(
       ros::WallDuration(1.0), [this](const ros::WallTimerEvent&) { this->checkConnectionTimer(); });
   ctx_->setDeviceChangedCallback([this](const std::shared_ptr<ob::DeviceList>& removed_list,
@@ -89,6 +91,9 @@ void OBCameraNodeDriver::init() {
 
 std::shared_ptr<ob::Device> OBCameraNodeDriver::selectDevice(
     const std::shared_ptr<ob::DeviceList>& list) {
+  if (!net_device_address_.empty() && net_device_port_ != 0) {
+    return ctx_->createNetDevice(net_device_address_.c_str(), net_device_port_);
+  }
   if (device_num_ == 1) {
     ROS_INFO_STREAM("Connecting to the default device");
     return list->getDevice(0);
@@ -203,8 +208,10 @@ void OBCameraNodeDriver::deviceConnectCallback(const std::shared_ptr<ob::DeviceL
     return;
   }
   if (list->deviceCount() == 0) {
-    ROS_WARN("No device found");
-    return;
+    if (net_device_address_.empty() || net_device_port_ == 0) {
+      ROS_WARN("No device found");
+      return;
+    }
   }
   bool start_device_failed = false;
   try {
@@ -248,7 +255,15 @@ void OBCameraNodeDriver::deviceConnectCallback(const std::shared_ptr<ob::DeviceL
 
 void OBCameraNodeDriver::checkConnectionTimer() {
   if (!device_connected_) {
-    ROS_DEBUG_STREAM("wait for device " << serial_number_ << " to be connected");
+    std::string device_id;
+    if (!serial_number_.empty()) {
+      device_id = serial_number_;
+    } else if (!usb_port_.empty()) {
+      device_id = usb_port_;
+    } else if (!net_device_address_.empty()) {
+      device_id = net_device_address_;
+    }
+    ROS_DEBUG_STREAM("wait for device " << device_id << " to be connected");
   } else if (!ob_camera_node_) {
     device_connected_ = false;
   }
@@ -302,8 +317,10 @@ void OBCameraNodeDriver::queryDevice() {
     auto list = ctx_->queryDeviceList();
     CHECK_NOTNULL(list.get());
     if (list->deviceCount() == 0) {
-      ROS_WARN_STREAM("No device found");
-      return;
+      if (net_device_address_.empty() || net_device_port_ == 0) {
+        ROS_WARN_STREAM("No device found");
+        return;
+      }
     }
     deviceConnectCallback(list);
   }
