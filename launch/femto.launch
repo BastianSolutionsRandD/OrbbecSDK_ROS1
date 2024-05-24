@@ -19,6 +19,7 @@
     <arg name="color_format" default="RGB"/>
     <arg name="flip_color" default="false"/>
     <arg name="enable_color_auto_exposure" default="true"/>
+    <arg name="enable_sync_output_accel_gyro" default="true"/> 
     <arg name="enable_accel" default="false"/>
     <arg name="accel_rate" default="100hz"/>
     <arg name="accel_range" default="4g"/>
@@ -46,7 +47,6 @@
     <arg name="color_info_uri" default=""/>
     <arg name="log_level" default="none"/>
     <arg name="enable_d2c_viewer" default="false"/>
-    <arg name="enable_pipeline" default="true"/>
     <arg name="enable_soft_filter" default="true"/>
     <group ns="$(arg camera_name)">
         <node name="camera" pkg="orbbec_camera" type="orbbec_camera_node" output="$(arg output)">
@@ -66,6 +66,7 @@
             <param name="color_format" value="$(arg color_format)"/>
             <param name="flip_color" value="$(arg flip_color)"/>
             <param name="enable_color_auto_exposure" value="$(arg enable_color_auto_exposure)"/>
+            <param name="enable_sync_output_accel_gyro" value="$(arg enable_sync_output_accel_gyro)"/>
             <param name="depth_width" value="$(arg depth_width)"/>
             <param name="depth_height" value="$(arg depth_height)"/>
             <param name="depth_fps" value="$(arg depth_fps)"/>
@@ -93,7 +94,6 @@
             <param name="color_info_uri" value="$(arg color_info_uri)"/>
             <param name="log_level" value="$(arg log_level)"/>
             <param name="enable_d2c_viewer" value="$(arg enable_d2c_viewer)"/>
-            <param name="enable_pipeline" value="$(arg enable_pipeline)"/>
             <param name="device_num" value="$(arg device_num)"/>
             <param name="enable_soft_filter" value="$(arg enable_soft_filter)"/>
             <remap from="/$(arg camera_name)/depth/color/points" to="/$(arg camera_name)/depth_registered/points"/>

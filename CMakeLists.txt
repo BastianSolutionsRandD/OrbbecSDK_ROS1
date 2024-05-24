@@ -59,6 +59,7 @@ find_package(catkin REQUIRED
   tf2_ros
   pluginlib
   nodelet
+  diagnostic_updater
 )
 set(SERVICE_FILES
   GetBool.srv
@@ -77,7 +78,6 @@ find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
-pkg_search_module(GLOG REQUIRED libglog)
 # Additional dependencies based on options
 if (USE_RK_HW_DECODER)
   pkg_search_module(RK_MPP REQUIRED rockchip_mpp)
@@ -93,7 +93,7 @@ if (USE_RK_HW_DECODER)
 endif ()
 
 # Message generation
-add_message_files(FILES DeviceInfo.msg Extrinsics.msg Metadata.msg)
+add_message_files(FILES DeviceInfo.msg Extrinsics.msg Metadata.msg IMUInfo.msg)
 add_service_files(FILES ${SERVICE_FILES})
 generate_messages(DEPENDENCIES std_msgs sensor_msgs)
 
@@ -183,10 +183,10 @@ endif ()
 set(COMMON_LINK_LIBRARIES
   ${catkin_LIBRARIES}
   ${OpenCV_LIBS}
-  ${GLOG_LIBRARIES}
   -lOrbbecSDK
   -L${ORBBEC_LIBS_DIR}
   Threads::Threads
+  -lrt
 )
 
 if (USE_RK_HW_DECODER)
@@ -230,10 +230,21 @@ add_orbbec_executable(orbbec_camera_node src/main.cpp)
 
 # Install
 install(TARGETS ${PROJECT_NAME} ${PROJECT_NAME}_nodelet ${EXECUTABLES}
+  orbbec_camera_node
+  list_devices_node
+  list_depth_work_mode_node
+  list_camera_profile_mode_node
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
+
+if(DEFINED ENV{BUILDING_PACKAGE})
+  # Install udev rules
+  install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/scripts/99-obsensor-ros1-libusb.rules
+    DESTINATION /etc/udev/rules.d
+  )
+endif()
 
 install(DIRECTORY include DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}/)
 install(DIRECTORY ${ORBBEC_INCLUDE_DIR} DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}/)
