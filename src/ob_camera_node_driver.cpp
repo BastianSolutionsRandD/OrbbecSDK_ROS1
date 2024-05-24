@@ -207,10 +207,8 @@ void OBCameraNodeDriver::deviceConnectCallback(const std::shared_ptr<ob::DeviceL
     return;
   }
   if (list->deviceCount() == 0) {
-    if (net_device_address_.empty() || net_device_port_ == 0) {
-      ROS_WARN("No device found");
-      return;
-    }
+    ROS_WARN("No device found");
+    return;
   }
   bool start_device_failed = false;
   try {
@@ -268,15 +266,7 @@ void OBCameraNodeDriver::connectNetDevice(const std::string &ip_address, int por
 
 void OBCameraNodeDriver::checkConnectionTimer() {
   if (!device_connected_) {
-    std::string device_id;
-    if (!serial_number_.empty()) {
-      device_id = serial_number_;
-    } else if (!usb_port_.empty()) {
-      device_id = usb_port_;
-    } else if (!net_device_address_.empty()) {
-      device_id = net_device_address_;
-    }
-    ROS_DEBUG_STREAM("wait for device " << device_id << " to be connected");
+    ROS_DEBUG_STREAM("wait for device " << serial_number_ << " to be connected");
   } else if (!ob_camera_node_) {
     device_connected_ = false;
   }
