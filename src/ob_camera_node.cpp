@@ -34,8 +34,6 @@ OBCameraNode::OBCameraNode(ros::NodeHandle& nh, ros::NodeHandle& nh_private,
   stream_name_[INFRA1] = "ir2";
   stream_name_[ACCEL] = "accel";
   stream_name_[GYRO] = "gyro";
-  nh_ir_ = ros::NodeHandle(stream_name_[INFRA0]);
-  nh_rgb_ = ros::NodeHandle(stream_name_[COLOR]);
   init();
 }
 
