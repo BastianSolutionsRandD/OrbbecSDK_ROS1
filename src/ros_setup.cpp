@@ -508,6 +508,9 @@ void OBCameraNode::setupPublishers() {
       continue;
     }
     std::string name = stream_name_[stream_index];
+    if (stream_index == DEPTH && depth_registration_) {
+      name = "aligned_depth_to_color";
+    }
     std::string topic_name = name + "/image_raw";
     image_transport::SubscriberStatusCallback it_subscribed_cb =
         boost::bind(&OBCameraNode::imageSubscribedCallback, this, stream_index);
