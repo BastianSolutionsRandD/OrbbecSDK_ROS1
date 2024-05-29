@@ -154,6 +154,11 @@ void OBCameraNode::getParameters() {
   if (enable_colored_point_cloud_) {
     depth_registration_ = true;
   }
+  if (depth_registration_ && !enable_stream_[COLOR]) {
+    ROS_WARN("Depth registration is enabled, but color stream is disable. "
+             "Forcing color stream on.");
+    enable_stream_[COLOR] = true;
+  }
   soft_filter_max_diff_ = nh_private_.param<int>("soft_filter_max_diff", -1);
   soft_filter_speckle_size_ = nh_private_.param<int>("soft_filter_speckle_size", -1);
   depth_filter_config_ = nh_private_.param<std::string>("depth_filter_config", "");
