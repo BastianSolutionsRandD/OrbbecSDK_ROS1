@@ -145,10 +145,15 @@ void OBCameraNode::setupDevices() {
     }
 
     auto depth_sensor = device_->getSensor(OB_SENSOR_DEPTH);
-    device_->setBoolProperty(OB_PROP_DEPTH_AUTO_EXPOSURE_BOOL, enable_ir_auto_exposure_);
+    if (device_->isPropertySupported(OB_PROP_DEPTH_AUTO_EXPOSURE_BOOL, OB_PERMISSION_READ_WRITE)) {
+      device_->setBoolProperty(OB_PROP_DEPTH_AUTO_EXPOSURE_BOOL, enable_ir_auto_exposure_);
+    }
     device_->setBoolProperty(OB_PROP_COLOR_AUTO_EXPOSURE_BOOL, enable_color_auto_exposure_);
     if (color_exposure_ != -1) {
       device_->setIntProperty(OB_PROP_COLOR_EXPOSURE_INT, color_exposure_);
+    }
+    if (color_gain_ != -1) {
+      device_->setIntProperty(OB_PROP_COLOR_GAIN_INT, color_gain_);
     }
     if (ir_exposure_ != -1) {
       device_->setIntProperty(OB_PROP_DEPTH_EXPOSURE_INT, ir_exposure_);
